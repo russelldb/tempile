@@ -1,0 +1,15 @@
+Provide a -config myconfig.config param to the vm on startup of put all your tempates in priv/templates.
+
+The former is better. Something like
+
+[{tempile, [{root, "/my/webapp/priv/templates/"}]}].
+
+in a myapp.config will get all xxxx.* compiled as mustache templates. The use
+
+tempile:render("templatename", contect_dict).
+
+to render.
+
+Still to do is recompile and cache templates on change. 
+Also want to allow swapping templating to erlydtl or what-have-you later.
+

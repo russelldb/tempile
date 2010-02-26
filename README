@@ -1,3 +1,18 @@
+git clone git://github.com/russelldb/tempile.git
+git submodule update --init
+cd deps/mustache.erl
+mkdir ebin
+erlc mustache.erl
+mv mustache.bin ebin/
+cd ../../
+./rebar compile
+erl -pa ebin/ deps/mustache.erl/ebin
+application:start(tempile).
+tempile:render("test", dict:from_list([{planet, "earth"}])).
+
+or something like that.
+
+
 Provide a -config myconfig.config param to the vm on startup of put all your tempates in priv/templates.
 
 The former is better. Something like

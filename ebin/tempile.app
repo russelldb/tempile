@@ -13,5 +13,5 @@
                   stdlib
                  ]},
   {mod, { tempile_app, []}},
-  {env, []}
+  {env, [{root, "priv/templates/"}]}
  ]}.

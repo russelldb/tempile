@@ -9,6 +9,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("kernel/include/file.hrl").
+
 %% API
 -export([start_link/0, render/2]).
 
@@ -17,7 +19,7 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
--record(state, {templates, root}).
+-record(state, {templates, root, timer, last}).
 
 %%====================================================================
 %% API
@@ -37,8 +39,6 @@ start_link() ->
 %%--------------------------------------------------------------------
 render(View, Context) ->
     gen_server:call(?SERVER, {render, View, Context}).
-    
-    
 
 %%====================================================================
 %% gen_server callbacks
@@ -57,7 +57,8 @@ init(Args) ->
     %% everything in root needs compiling, its name is its key
     {ok, Files} = file:list_dir(Root),
     Dict = compile_templates(Root, Files, dict:new()),
-    {ok, #state{templates=Dict, root=Root}}.
+    {ok, TRef} = timer:send_interval(timer:seconds(1), check_templates),
+    {ok, #state{templates=Dict, root=Root, timer=TRef, last=stamp()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -92,6 +93,11 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
+handle_info(check_templates, State) ->
+    Now = stamp(),
+    {ok, Files} = file:list_dir(State#state.root),
+    Templates = check_files(Files, State#state.root, Now, State#state.last, State#state.templates),
+    {noreply, State#state{last=Now, templates=Templates}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -102,7 +108,8 @@ handle_info(_Info, State) ->
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    {ok, cancel} = timer:cancel(State#state.timer),
     ok.
 
 %%--------------------------------------------------------------------
@@ -122,7 +129,23 @@ compile_templates(Root, [H|T], Dict) ->
     compile_templates(Root, T, dict:store(K, V, Dict)).
 
 compile_template(File) ->
-    io:format("Compiling ~p~n", [File]),
+    error_logger:info_msg("Compiling ~p~n", [File]),
     {ok, Bin} = file:read_file(File),
     CFun = mustache:compile(binary_to_list(Bin)),
     {filename:basename(filename:rootname(File)), CFun}.
+
+
+check_files([], _, _, _, Templates) ->
+    Templates;
+check_files([H|T], Root, Now, Then, Templates) ->
+    File = filename:join(Root, H),
+    case file:read_file_info(File) of
+	{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
+	    {K, V} = compile_template(filename:join(Root, H)),
+	    check_files(T, Root, Now, Then, dict:store(K, V, Templates));
+	{_, _} ->
+	    check_files(T, Root, Now, Then , Templates)
+    end.
+
+stamp() ->
+    erlang:localtime().

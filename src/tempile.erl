@@ -52,11 +52,11 @@ render(View, Context) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init(Args) ->
-    io:format("Starting tempile with env ~p~n", [Args]),
+    error_logger:info_msg("Starting tempile with env ~p~n", [Args]),
     Root = proplists:get_value(root, Args),
-    %% everything in root needs compiling, its name is its key
+    %% TODO add extension filtering
     {ok, Files} = file:list_dir(Root),
-    Dict = compile_templates(Root, Files, dict:new()),
+    Dict = check_and_compile(Files, Root, stamp(), 0,  dict:new()),
     {ok, TRef} = timer:send_interval(timer:seconds(1), check_templates),
     {ok, #state{templates=Dict, root=Root, timer=TRef, last=stamp()}}.
 
@@ -96,7 +96,7 @@ handle_cast(_Msg, State) ->
 handle_info(check_templates, State) ->
     Now = stamp(),
     {ok, Files} = file:list_dir(State#state.root),
-    Templates = check_files(Files, State#state.root, Now, State#state.last, State#state.templates),
+    Templates = check_and_compile(Files, State#state.root, Now, State#state.last, State#state.templates),
     {noreply, State#state{last=Now, templates=Templates}};
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -122,14 +122,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-compile_templates(_, [], Dict) ->
-    Dict;
-compile_templates(Root, [H|T], Dict) ->
-    case compile_template(filename:join(Root, H)) of 
-	{ok, K, V} ->  compile_templates(Root, T, dict:store(K, V, Dict));
-	{error, _, _} -> compile_templates(Root, T, Dict)
-    end.
-
 compile_template(File) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
     {ok, Bin} = file:read_file(File),
@@ -141,20 +133,20 @@ compile_template(File) ->
 	    {error, ExType, Mess}
     end.
 
-check_files([], _, _, _, Templates) ->
+check_and_compile([], _, _, _, Templates) ->
     Templates;
-check_files([H|T], Root, Now, Then, Templates) ->
+check_and_compile([H|T], Root, Now, Then, Templates) ->
     File = filename:join(Root, H),
     case file:read_file_info(File) of
 	{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
 	    case compile_template(filename:join(Root, H)) of
 		{ok, K, V} ->
-		    check_files(T, Root, Now, Then, dict:store(K, V, Templates));
+		    check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
 		{error, _, _} ->
-		    check_files(T, Root, Now, Then , Templates)
+		    check_and_compile(T, Root, Now, Then , Templates)
 	    end;
 	{_, _} ->
-	    check_files(T, Root, Now, Then , Templates)
+	    check_and_compile(T, Root, Now, Then , Templates)
     end.
 
 stamp() ->

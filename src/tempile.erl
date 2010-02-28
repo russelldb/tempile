@@ -125,15 +125,21 @@ code_change(_OldVsn, State, _Extra) ->
 compile_templates(_, [], Dict) ->
     Dict;
 compile_templates(Root, [H|T], Dict) ->
-    {K, V} = compile_template(filename:join(Root, H)),
-    compile_templates(Root, T, dict:store(K, V, Dict)).
+    case compile_template(filename:join(Root, H)) of 
+	{ok, K, V} ->  compile_templates(Root, T, dict:store(K, V, Dict));
+	{error, _, _} -> compile_templates(Root, T, Dict)
+    end.
 
 compile_template(File) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
     {ok, Bin} = file:read_file(File),
-    CFun = mustache:compile(binary_to_list(Bin)),
-    {filename:basename(filename:rootname(File)), CFun}.
-
+    try mustache:compile(binary_to_list(Bin)) of
+	CFun ->  {ok, filename:basename(filename:rootname(File)), CFun}
+    catch
+	ExType:Mess ->
+	    error_logger:error_msg("Failed compiling ~p with ~p:~p~n", [File, ExType, Mess]),
+	    {error, ExType, Mess}
+    end.
 
 check_files([], _, _, _, Templates) ->
     Templates;
@@ -141,8 +147,12 @@ check_files([H|T], Root, Now, Then, Templates) ->
     File = filename:join(Root, H),
     case file:read_file_info(File) of
 	{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
-	    {K, V} = compile_template(filename:join(Root, H)),
-	    check_files(T, Root, Now, Then, dict:store(K, V, Templates));
+	    case compile_template(filename:join(Root, H)) of
+		{ok, K, V} ->
+		    check_files(T, Root, Now, Then, dict:store(K, V, Templates));
+		{error, _, _} ->
+		    check_files(T, Root, Now, Then , Templates)
+	    end;
 	{_, _} ->
 	    check_files(T, Root, Now, Then , Templates)
     end.

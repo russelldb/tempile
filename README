@@ -17,9 +17,9 @@ Provide a -config myconfig.config param to the vm on startup of put all your tem
 
 The former is better. Something like
 
-[{tempile, [{root, "/my/webapp/priv/templates/"}]}].
+[{tempile, [{root, "/my/webapp/priv/templates/"}, {extension, ".tache"}]}].
 
-in a myapp.config will get all xxxx.* compiled as mustache templates. The use
+in a myapp.config will get all xxxx.extension compiled as mustache templates. Then use
 
 tempile:render("templatename", contect_dict).
 

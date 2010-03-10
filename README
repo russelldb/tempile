@@ -26,3 +26,7 @@ tempile:render("templatename", contect_dict).
 to render.
 
 Tempile watches the directory you specify as root and any files added or changed are recompiled.
+
+I am using this with [Webmachine](http://bitbucket.org/justin/webmachine/wiki/Home "webmachine") just by starting tempile and naming templates after resources.
+In your resources to_html call tempile:render(?MODULE, YourContext) and add any view methods you need to the resource. Alternativly call tempile:render(your_view_module, YourContext) with
+a parameterized module or the name of a view specific module of your choice.

@@ -139,7 +139,7 @@ check_and_compile([H|T], Root, Now, Then, Templates) ->
     File = filename:join(Root, H),
     case file:read_file_info(File) of
 	{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
-	    case compile_template(filename:join(Root, H)) of
+	    case compile_template(File) of
 		{ok, K, V} ->
 		    check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
 		{error, _, _} ->

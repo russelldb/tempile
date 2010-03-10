@@ -25,6 +25,4 @@ tempile:render("templatename", contect_dict).
 
 to render.
 
-Still to do is recompile and cache templates on change. 
-Also want to allow swapping templating to erlydtl or what-have-you later.
-
+Tempile watches the directory you specify as root and any files added or changed are recompiled.

@@ -19,7 +19,9 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
--record(state, {templates, root, timer, last}).
+-define(EXT, ".mustache").
+
+-record(state, {templates, root, extension, timer, last}).
 
 %%====================================================================
 %% API
@@ -54,11 +56,11 @@ render(View, Context) ->
 init(Args) ->
     error_logger:info_msg("Starting tempile with env ~p~n", [Args]),
     Root = proplists:get_value(root, Args),
-    %% TODO add extension filtering
-    {ok, Files} = file:list_dir(Root),
+    Ext = proplists:get_value(extension, Args, ?EXT),
+    Files = get_files(Root, Ext),
     Dict = check_and_compile(Files, Root, stamp(), 0,  dict:new()),
     {ok, TRef} = timer:send_interval(timer:seconds(1), check_templates),
-    {ok, #state{templates=Dict, root=Root, timer=TRef, last=stamp()}}.
+    {ok, #state{templates=Dict, root=Root, extension=Ext, timer=TRef, last=stamp()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -71,9 +73,13 @@ init(Args) ->
 %%--------------------------------------------------------------------
 handle_call({render, View, Context}, _From, State) ->
     Dict = State#state.templates,
-    CompiledTemplate = dict:fetch(View, Dict),
-    Rendered = mustache:render(undefined, CompiledTemplate, Context),
-    {reply, Rendered, State};
+    case dict:find(View, Dict) of
+	{ok, CompiledTemplate} ->
+	    Reply = {ok, mustache:render(undefined, CompiledTemplate, Context)};
+	error ->
+	    Reply = {error, "Template " ++ View ++ " not found"}
+    end,
+    {reply, Reply, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -95,7 +101,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(check_templates, State) ->
     Now = stamp(),
-    {ok, Files} = file:list_dir(State#state.root),
+    Files = get_files(State#state.root, State#state.extension),
     Templates = check_and_compile(Files, State#state.root, Now, State#state.last, State#state.templates),
     {noreply, State#state{last=Now, templates=Templates}};
 handle_info(_Info, State) ->
@@ -151,3 +157,7 @@ check_and_compile([H|T], Root, Now, Then, Templates) ->
 
 stamp() ->
     erlang:localtime().
+
+get_files(Root, Extension) ->
+    {ok, Files} = file:list_dir(Root),
+    [ F || F <- Files, (filename:extension(F) =:= Extension)].

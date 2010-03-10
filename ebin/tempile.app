@@ -13,5 +13,5 @@
                   stdlib
                  ]},
   {mod, { tempile_app, []}},
-  {env, [{root, "priv/templates/"}]}
+  {env, [{root, "priv/templates/"}, {extension, ".mustache"}]}
  ]}.

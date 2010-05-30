@@ -75,7 +75,7 @@ handle_call({render, View, Context}, _From, State) ->
     Dict = State#state.templates,
     case dict:find(View, Dict) of
 	{ok, CompiledTemplate} ->
-	    Reply = {ok, mustache:render(undefined, CompiledTemplate, Context)};
+	    Reply = {ok, mustache:render(View, CompiledTemplate, Context)};
 	error ->
 	    Reply = {error, "Template " ++ View ++ " not found"}
     end,

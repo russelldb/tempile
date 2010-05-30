@@ -39,7 +39,7 @@ start_link() ->
 %% Context dict of name values to render
 %% Description: render View with Context
 %%--------------------------------------------------------------------
-render(View, Context) ->
+render(View, Context) when is_atom(View) ->
     gen_server:call(?SERVER, {render, View, Context}).
 
 %%====================================================================
@@ -75,6 +75,7 @@ handle_call({render, View, Context}, _From, State) ->
     Dict = State#state.templates,
     case dict:find(View, Dict) of
 	{ok, CompiledTemplate} ->
+	    error_logger:info_msg("Rendering ~p~n", [View]),
 	    Reply = {ok, mustache:render(View, CompiledTemplate, Context)};
 	error ->
 	    Reply = {error, "Template " ++ View ++ " not found"}
@@ -130,9 +131,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 compile_template(File) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
-    {ok, Bin} = file:read_file(File),
-    try mustache:compile(binary_to_list(Bin)) of
-	CFun ->  {ok, filename:basename(filename:rootname(File)), CFun}
+    View = list_to_atom(filename:basename(filename:rootname(File))),
+    try mustache:compile(View, File) of
+	CFun ->  {ok, View, CFun}
     catch
 	ExType:Mess ->
 	    error_logger:error_msg("Failed compiling ~p with ~p:~p~n", [File, ExType, Mess]),

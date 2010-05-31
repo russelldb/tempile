@@ -16,7 +16,7 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+		 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
 -define(EXT, ".mustache").
@@ -74,11 +74,11 @@ init(Args) ->
 handle_call({render, View, Context}, _From, State) ->
     Dict = State#state.templates,
     case dict:find(View, Dict) of
-	{ok, CompiledTemplate} ->
-	    error_logger:info_msg("Rendering ~p~n", [View]),
-	    Reply = {ok, mustache:render(View, CompiledTemplate, Context)};
-	error ->
-	    Reply = {error, "Template " ++ View ++ " not found"}
+		{ok, CompiledTemplate} ->
+			error_logger:info_msg("Rendering ~p~n", [View]),
+			Reply =  CompiledTemplate:render(Context);
+		error ->
+			Reply = {error, "Template " ++ View ++ " not found"}
     end,
     {reply, Reply, State};
 handle_call(_Request, _From, State) ->
@@ -129,15 +129,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-compile_template(File) ->
+compile_template(File, Root) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
     View = list_to_atom(filename:basename(filename:rootname(File))),
-    try mustache:compile(View, File) of
-	CFun ->  {ok, View, CFun}
+    try erlydtl:compile(File, View, [{doc_root, Root}]) of
+		ok ->  {ok, View, View}
     catch
-	ExType:Mess ->
-	    error_logger:error_msg("Failed compiling ~p with ~p:~p~n", [File, ExType, Mess]),
-	    {error, ExType, Mess}
+		ExType:Mess ->
+			error_logger:error_msg("Failed compiling ~p with ~p:~p~n", [File, ExType, Mess]),
+			{error, ExType, Mess}
     end.
 
 check_and_compile([], _, _, _, Templates) ->
@@ -145,15 +145,15 @@ check_and_compile([], _, _, _, Templates) ->
 check_and_compile([H|T], Root, Now, Then, Templates) ->
     File = filename:join(Root, H),
     case file:read_file_info(File) of
-	{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
-	    case compile_template(File) of
-		{ok, K, V} ->
-		    check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
-		{error, _, _} ->
-		    check_and_compile(T, Root, Now, Then , Templates)
-	    end;
-	{_, _} ->
-	    check_and_compile(T, Root, Now, Then , Templates)
+		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
+			case compile_template(File, Root) of
+				{ok, K, V} ->
+					check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
+				{error, _, _} ->
+					check_and_compile(T, Root, Now, Then , Templates)
+			end;
+		{_, _} ->
+			check_and_compile(T, Root, Now, Then , Templates)
     end.
 
 stamp() ->

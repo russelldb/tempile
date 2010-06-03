@@ -160,5 +160,5 @@ stamp() ->
     erlang:localtime().
 
 get_files(Root, Extension) ->
-    {ok, Files} = file:list_dir(Root),
-    [ F || F <- Files, (filename:extension(F) =:= Extension)].
+    tempile_find:files(Root, "*" + Extension, true).
+    

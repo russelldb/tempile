@@ -5,7 +5,8 @@
   {modules, [
 	     tempile,
              tempile_app,
-             tempile_sup
+             tempile_sup,
+	     tempile_find
             ]},
   {registered, [tempile, tempile_sup]},
   {applications, [

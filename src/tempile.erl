@@ -78,7 +78,7 @@ handle_call({render, View, Context}, _From, State) ->
 			error_logger:info_msg("Rendering ~p~n", [View]),
 			Reply =  CompiledTemplate:render(Context);
 		error ->
-			Reply = {error, "Template " ++ View ++ " not found"}
+			Reply = {error, "Template " ++ atom_to_list(View) ++ " not found"}
     end,
     {reply, Reply, State};
 handle_call(_Request, _From, State) ->
@@ -142,8 +142,7 @@ compile_template(File, Root) ->
 
 check_and_compile([], _, _, _, Templates) ->
     Templates;
-check_and_compile([H|T], Root, Now, Then, Templates) ->
-    File = filename:join(Root, H),
+check_and_compile([File|T], Root, Now, Then, Templates) ->
     case file:read_file_info(File) of
 		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
 			case compile_template(File, Root) of
@@ -160,5 +159,5 @@ stamp() ->
     erlang:localtime().
 
 get_files(Root, Extension) ->
-    tempile_find:files(Root, "*" + Extension, true).
+    tempile_find:files(Root, "*" ++ Extension, true).
     

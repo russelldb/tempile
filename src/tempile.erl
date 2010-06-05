@@ -40,7 +40,9 @@ start_link() ->
 %% Description: render View with Context
 %%--------------------------------------------------------------------
 render(View, Context) when is_atom(View) ->
-    gen_server:call(?SERVER, {render, View, Context}).
+    gen_server:call(?SERVER, {render, View, Context});
+render(View, Context) when is_list(View) ->
+	render(list_to_atom(View), Context).
 
 %%====================================================================
 %% gen_server callbacks

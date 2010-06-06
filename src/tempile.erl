@@ -148,6 +148,7 @@ check_and_compile([H|T], Root, Now, Then, Templates) ->
 		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
 			case compile_template(File, Root) of
 				{ok, K, V} ->
+					reverse_register_dependencies(V),
 					check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
 				{error, _, _} ->
 					check_and_compile(T, Root, Now, Then , Templates)
@@ -161,4 +162,8 @@ stamp() ->
 
 get_files(Root, Extension) ->
     tempile_find:files(Root, "*" + Extension, true).
+
+%% Register the passed view against the dependancy so that we can recompile the view if the any dep changes
+reverse_register_dependencies(View) ->
+	io:format("~p has deps ~p~n", [View:source(), View:dependencies()]).
     

@@ -21,7 +21,7 @@
 -define(SERVER, ?MODULE). 
 -define(EXT, ".mustache").
 
--record(state, {templates, root, extension, timer, last}).
+-record(state, {templates, dependencies, root, extension, timers, last, dep_last}).
 
 %%====================================================================
 %% API
@@ -60,9 +60,11 @@ init(Args) ->
     Root = proplists:get_value(root, Args),
     Ext = proplists:get_value(extension, Args, ?EXT),
     Files = get_files(Root, Ext),
-    Dict = check_and_compile(Files, Root, stamp(), 0,  dict:new()),
-    {ok, TRef} = timer:send_interval(timer:seconds(1), check_templates),
-    {ok, #state{templates=Dict, root=Root, extension=Ext, timer=TRef, last=stamp()}}.
+    Templates = check_and_compile(Files, Root, stamp(), 0,  dict:new()),
+	Dependencies = get_dependencies(Templates),
+    {ok, TRef} = timer:send_interval(timer:seconds(5), check_templates),
+	{ok, DRef} = timer:send_interval(timer:seconds(5), check_deps),
+    {ok, #state{templates=Templates, dependencies=Dependencies, root=Root, extension=Ext, timers=[TRef, DRef], last=stamp(), dep_last=stamp()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -106,7 +108,12 @@ handle_info(check_templates, State) ->
     Now = stamp(),
     Files = get_files(State#state.root, State#state.extension),
     Templates = check_and_compile(Files, State#state.root, Now, State#state.last, State#state.templates),
-    {noreply, State#state{last=Now, templates=Templates}};
+	Deps = get_dependencies(Templates),
+    {noreply, State#state{last=Now, templates=Templates, dependencies=Deps}};
+handle_info(check_deps, State) ->
+	Now = stamp(),
+	Templates = check_deps(dict:to_list(State#state.dependencies), State#state.root, Now, State#state.dep_last, State#state.templates),
+	{noreply, State#state{dep_last=Now, templates=Templates}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -118,8 +125,8 @@ handle_info(_Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
-    {ok, cancel} = timer:cancel(State#state.timer),
-    ok.
+	cancel_timers(State#state.timers),
+	ok.
 
 %%--------------------------------------------------------------------
 %% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
@@ -131,6 +138,33 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+check_deps([], _, _, _, Templates) ->
+	Templates;
+check_deps([{Dep, Files}|T], Root, Now, Then, Templates) ->
+	case file:read_file_info(Dep) of
+		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
+			check_deps(T, Root, Now, Then, compile(Files, Root, Templates));
+		_ ->
+			check_deps(T, Root, Now, Then, Templates)
+	end.
+
+compile([], _, Templates) ->
+	Templates;
+compile([File|T], Root, Templates) ->
+	case compile_template(File, Root) of
+		{ok, K, V} ->
+			compile(T, Root, dict:store(K, V, Templates));
+		{error, _, _} ->
+			%% TODO look at this, is it better to crash here?
+			compile(T, Root,  Templates)
+	end.
+
+cancel_timers([])->
+	ok;
+cancel_timers([H|T]) ->
+	timer:cancel(H),
+	cancel_timers(T).
+
 compile_template(File, Root) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
     View = list_to_atom(filename:basename(filename:rootname(File))),
@@ -149,8 +183,9 @@ check_and_compile([File|T], Root, Now, Then, Templates) ->
 		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
 			case compile_template(File, Root) of
 				{ok, K, V} ->
-					check_and_compile(T, Root, Now, Then, dict:store(K, V, Templates));
+				   	check_and_compile(T, Root, Now, Then,  dict:store(K, V, Templates));
 				{error, _, _} ->
+					%% Is it better to crash than have missing templates?
 					check_and_compile(T, Root, Now, Then , Templates)
 			end;
 		{_, _} ->
@@ -162,4 +197,27 @@ stamp() ->
 
 get_files(Root, Extension) ->
     tempile_find:files(Root, "*" ++ Extension, true).
-    
+
+%% Register the passed view against the dependancy so that we can recompile the view if any deps changes
+get_dependencies(Views) ->
+	get_dependencies(dict:fetch_keys(Views), dict:new()).
+
+get_dependencies([], Deps) ->
+	Deps;
+get_dependencies([H|T], Deps) ->
+	get_dependencies(T, reverse_register_dependencies(H, Deps)).
+	
+reverse_register_dependencies(View, Deps) ->
+	{Source, _} = View:source(),
+	register_dependency(View:dependencies(), Source, Deps).
+
+register_dependency([], _, Deps) ->
+	Deps;
+register_dependency([{Dep, _}|T], Source, Deps) ->
+	register_dependency(T, Source, dict:append(Dep, Source, Deps)).
+
+
+
+
+
+

@@ -21,7 +21,7 @@
 -define(SERVER, ?MODULE). 
 -define(EXT, ".mustache").
 
--record(state, {templates, dependencies, root, extension, timers, last, dep_last}).
+-record(state, {templates, dependencies, vars, root, extension, timers, last, dep_last}).
 
 %%====================================================================
 %% API
@@ -59,12 +59,13 @@ init(Args) ->
     error_logger:info_msg("Starting tempile with env ~p~n", [Args]),
     Root = proplists:get_value(root, Args),
     Ext = proplists:get_value(extension, Args, ?EXT),
+	Vars = proplists:get_value(vars, Args, [{}]),
     Files = get_files(Root, Ext),
-    Templates = check_and_compile(Files, Root, stamp(), 0,  dict:new()),
+    Templates = check_and_compile(Files, Root, Vars, stamp(), 0,  dict:new()),
 	Dependencies = get_dependencies(Templates),
     {ok, TRef} = timer:send_interval(timer:seconds(5), check_templates),
 	{ok, DRef} = timer:send_interval(timer:seconds(5), check_deps),
-    {ok, #state{templates=Templates, dependencies=Dependencies, root=Root, extension=Ext, timers=[TRef, DRef], last=stamp(), dep_last=stamp()}}.
+    {ok, #state{templates=Templates, dependencies=Dependencies, vars=Vars, root=Root, extension=Ext, timers=[TRef, DRef], last=stamp(), dep_last=stamp()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -107,12 +108,12 @@ handle_cast(_Msg, State) ->
 handle_info(check_templates, State) ->
     Now = stamp(),
     Files = get_files(State#state.root, State#state.extension),
-    Templates = check_and_compile(Files, State#state.root, Now, State#state.last, State#state.templates),
+    Templates = check_and_compile(Files, State#state.root, State#state.vars, Now, State#state.last, State#state.templates),
 	Deps = get_dependencies(Templates),
     {noreply, State#state{last=Now, templates=Templates, dependencies=Deps}};
 handle_info(check_deps, State) ->
 	Now = stamp(),
-	Templates = check_deps(dict:to_list(State#state.dependencies), State#state.root, Now, State#state.dep_last, State#state.templates),
+	Templates = check_deps(dict:to_list(State#state.dependencies), State#state.root, State#state.vars, Now, State#state.dep_last, State#state.templates),
 	{noreply, State#state{dep_last=Now, templates=Templates}};
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -138,25 +139,25 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-check_deps([], _, _, _, Templates) ->
+check_deps([], _, _, _, _, Templates) ->
 	Templates;
-check_deps([{Dep, Files}|T], Root, Now, Then, Templates) ->
+check_deps([{Dep, Files}|T], Root, Vars, Now, Then, Templates) ->
 	case file:read_file_info(Dep) of
 		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
-			check_deps(T, Root, Now, Then, compile(Files, Root, Templates));
+			check_deps(T, Root, Vars, Now, Then, compile(Files, Root, Vars,  Templates));
 		_ ->
-			check_deps(T, Root, Now, Then, Templates)
+			check_deps(T, Root, Vars, Now, Then, Templates)
 	end.
 
-compile([], _, Templates) ->
+compile([], _, _, Templates) ->
 	Templates;
-compile([File|T], Root, Templates) ->
-	case compile_template(File, Root) of
+compile([File|T], Root, Vars, Templates) ->
+	case compile_template(File, Root, Vars) of
 		{ok, K, V} ->
-			compile(T, Root, dict:store(K, V, Templates));
+			compile(T, Root, Vars,  dict:store(K, V, Templates));
 		{error, _, _} ->
 			%% TODO look at this, is it better to crash here?
-			compile(T, Root,  Templates)
+			compile(T, Root, Vars, Templates)
 	end.
 
 cancel_timers([])->
@@ -165,10 +166,10 @@ cancel_timers([H|T]) ->
 	timer:cancel(H),
 	cancel_timers(T).
 
-compile_template(File, Root) ->
+compile_template(File, Root, Vars) ->
     error_logger:info_msg("Compiling ~p~n", [File]),
     View = list_to_atom(filename:basename(filename:rootname(File))),
-    try erlydtl:compile(File, View, [{doc_root, Root}]) of
+    try erlydtl:compile(File, View, [{doc_root, Root}, {vars, Vars}]) of
 		ok ->  {ok, View, View}
     catch
 		ExType:Mess ->
@@ -176,20 +177,20 @@ compile_template(File, Root) ->
 			{error, ExType, Mess}
     end.
 
-check_and_compile([], _, _, _, Templates) ->
+check_and_compile([], _, _, _, _, Templates) ->
     Templates;
-check_and_compile([File|T], Root, Now, Then, Templates) ->
+check_and_compile([File|T], Root, Vars, Now, Then, Templates) ->
     case file:read_file_info(File) of
 		{ok, #file_info{mtime=Mtime}} when Mtime >= Then, Mtime < Now ->
-			case compile_template(File, Root) of
+			case compile_template(File, Root, Vars) of
 				{ok, K, V} ->
-				   	check_and_compile(T, Root, Now, Then,  dict:store(K, V, Templates));
+				   	check_and_compile(T, Root, Vars, Now, Then,  dict:store(K, V, Templates));
 				{error, _, _} ->
 					%% Is it better to crash than have missing templates?
-					check_and_compile(T, Root, Now, Then , Templates)
+					check_and_compile(T, Root, Vars, Now, Then , Templates)
 			end;
 		{_, _} ->
-			check_and_compile(T, Root, Now, Then , Templates)
+			check_and_compile(T, Root, Vars, Now, Then , Templates)
     end.
 
 stamp() ->

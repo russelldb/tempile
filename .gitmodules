@@ -1,6 +1,0 @@
-[submodule "deps/mustache.erl"]
-	path = deps/mustache.erl
-	url = git://github.com/mojombo/mustache.erl.git
-[submodule "deps/erlydtl"]
-	path = deps/erlydtl
-	url = http://github.com/evanmiller/erlydtl.git
